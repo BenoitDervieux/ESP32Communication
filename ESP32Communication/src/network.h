@@ -1,29 +1,44 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 #include <FastLED.h>
-// #include <WiFi.h>
 #include <iostream> 
 #include <string> // for string class 
 using namespace std;
 #include <SPI.h>
+#include "painlessMesh.h"
 
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "esp_log.h"
-#include "esp_event_loop.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
-#include "nvs_flash.h"
+#define NUM_LEDS 10
+#define DATA_PIN_1 23
+#define BRIGHTNESS 100
+#define BUTTON_PIN 15
+
+
+#define   MESH_PREFIX     "whateverYouLike"
+#define   MESH_PASSWORD   "somethingSneaky"
+#define   MESH_PORT       5555
 
 class Network {
 
     public: 
+        Network();
+        void instantiate();
+        void wifi_init();
+        void run();
+        void sendMessage();
+        String getReadings();
+        void receivedCallback( uint32_t from, String &msg );
+        void newConnectionCallback(uint32_t nodeId);
+        void changedConnectionCallback();
+        void nodeTimeAdjustedCallback(int32_t offset);
+        CRGB hexToCRGB(const String& hex);
+        String decimalStringToHex(String decimalString);
 
-        Network(CRGB leds[]);
-        void scanWifi(string ssid, string password);
-        static void test_wifi_scan_all();
-        static void wifi_scan(void);
-        static esp_err_t event_handler(void *ctx, system_event_t *event);
+    private:
+        Task task;
+        String readings;
+        int buttonPin;
+        int buttonState;
+        String bufferMessage;
 
 };
 

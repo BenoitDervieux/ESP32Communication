@@ -1,147 +1,122 @@
 #include "network.h"
 
-Network::Network(CRGB leds[]) {
+CRGB leds[NUM_LEDS];
+Scheduler userScheduler; // to control your personal task
+painlessMesh  mesh;
+int buttonState = 0;
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&cfg);
-    esp_wifi_scan_start(NULL, false);
 
+Network::Network() {
+	buttonPin = BUTTON_PIN;
+	buttonState = 0;
 }
 
-// void Network::scanWifi(string ssid, string password) {
-
-//     // scan for nearby networks:
-//     Serial.println("** Scan Networks **");
-//     int numSsid = WiFi.scanNetworks();
-//     if (numSsid == -1) {
-//         Serial.println("Couldn't get a wifi connection");
-//         while (true);
-//     }
-
-//     // print the list of networks seen:
-//     Serial.print("number of available networks:");
-//     Serial.println(numSsid);
-
-//     // print the network number and name for each network found:
-//     for (int thisNet = 0; thisNet < numSsid; thisNet++) {
-//         Serial.print(thisNet);
-//         Serial.print(") ");
-//         Serial.print(WiFi.SSID(thisNet));
-//         Serial.print("\tSignal: ");
-//         Serial.print(WiFi.RSSI(thisNet));
-//         Serial.print(" dBm\n");
-//     }
-// }
-
-static const char *TAG = "scan";
-
-void Network::scanWifi(string ssid, string password) {
-
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-    wifi_scan();
+void Network::instantiate() {
+	this->task.set(0, 0, [this]() { this->sendMessage(); });
+	FastLED.addLeds<WS2812B, DATA_PIN_1, GRB>(leds, NUM_LEDS);
+	FastLED.setBrightness(BRIGHTNESS);
+	fill_solid(leds, NUM_LEDS, CRGB::Black);
+	FastLED.show();
+	pinMode(buttonPin, INPUT);
+	
 }
 
-esp_err_t Network::event_handler(void *ctx, system_event_t *event)
-{
-    switch (event->event_id) {
-        case SYSTEM_EVENT_STA_START:
-            ESP_LOGI(TAG, "SYSTEM_EVENT_STA_START");
-            //ESP_ERROR_CHECK(esp_wifi_connect());
-            break;
-        case SYSTEM_EVENT_STA_GOT_IP:
-            ESP_LOGI(TAG, "SYSTEM_EVENT_STA_GOT_IP");
-            //ESP_LOGI(TAG, "Got IP: %s\n",
-            //         ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-            break;
-        case SYSTEM_EVENT_STA_DISCONNECTED:
-            ESP_LOGI(TAG, "SYSTEM_EVENT_STA_DISCONNECTED");
-            //ESP_ERROR_CHECK(esp_wifi_connect());
-            break;
-		case SYSTEM_EVENT_SCAN_DONE:
-			ESP_LOGI(TAG, "SYSTEM_EVENT_SCAN_DONE");
-			test_wifi_scan_all();
-			break;
-        default:
-            break;
-    }
-    return ESP_OK;
+void Network::wifi_init() {
+	// Serial.println("Init WiFi");
+	//mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
+	mesh.setDebugMsgTypes( ERROR | STARTUP );  // set before init() so that you can see startup messages
+	Serial.println("After set Debug");
+	mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT );
+	Serial.println("After init");
+	mesh.onReceive([this](uint32_t from, String &msg) { this->receivedCallback(from, msg); });
+	Serial.println("After onReceive");
+	mesh.onNewConnection([this](uint32_t nodeId) { this->newConnectionCallback(nodeId); });
+	Serial.println("After new connection");
+	mesh.onChangedConnections([this]() { this->changedConnectionCallback(); });
+	Serial.println("After on change");
+	mesh.onNodeTimeAdjusted([this](int32_t offset) { this->nodeTimeAdjustedCallback(offset); });
+	Serial.println("After on node");
+	userScheduler.addTask( this->task );
+	Serial.println("After add task");
+	this->task.enable();
+	Serial.println("after enable");
+
+	fill_solid(leds, NUM_LEDS, CRGB::Blue);
+    FastLED.show();
 }
 
-/* Initialize Wi-Fi as sta and set scan method */
-void Network::wifi_scan(void)
-{
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    wifi_scan_config_t scan_config = {
-		.ssid = 0,
-		.bssid = 0,
-		.channel = 0,	/* 0--all channel scan */
-		.show_hidden = 1,
-		.scan_type = WIFI_SCAN_TYPE_ACTIVE,
-		// .scan_time.active.min = 120,
-		// .scan_time.active.max = 150,
-	};
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    //ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-	// while (1)
-	// {
-		ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
-		vTaskDelay(2000 / portTICK_PERIOD_MS);
-	// }
-}
-
-void Network::test_wifi_scan_all()
-{
-	uint16_t ap_count = 0;
-	wifi_ap_record_t *ap_list;
-	uint8_t i;
-	char *authmode;
-
-	esp_wifi_scan_get_ap_num(&ap_count);	
-	Serial.printf("--------scan count of AP is %d-------\n", ap_count);
-	if (ap_count <= 0)
-		return; 
-
-	ap_list = (wifi_ap_record_t *)malloc(ap_count * sizeof(wifi_ap_record_t));
-	ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));	
-
-	Serial.printf("======================================================================\n");
-	Serial.printf("             SSID             |    RSSI    |           AUTH           \n");
-	Serial.printf("======================================================================\n");
-    for (i = 0; i < ap_count; i++) 
-	{
-	    switch(ap_list[i].authmode) 
-	    {
-		    case WIFI_AUTH_OPEN:
-		       authmode = "WIFI_AUTH_OPEN";
-		       break;
-		    case WIFI_AUTH_WEP:
-		       authmode = "WIFI_AUTH_WEP";
-		       break;           
-		    case WIFI_AUTH_WPA_PSK:
-		       authmode = "WIFI_AUTH_WPA_PSK";
-		       break;           
-		    case WIFI_AUTH_WPA2_PSK:
-		       authmode = "WIFI_AUTH_WPA2_PSK";
-		       break;           
-		    case WIFI_AUTH_WPA_WPA2_PSK:
-		       authmode = "WIFI_AUTH_WPA_WPA2_PSK";
-		       break;
-		    default:
-		       authmode = "Unknown";
-		       break;
-    	        }
-   		Serial.printf("%26.26s    |    % 4d    |    %22.22s\n", ap_list[i].ssid, ap_list[i].rssi, authmode);
+void Network::run() {
+	buttonState = digitalRead(buttonPin);
+	if (buttonState == HIGH) {
+		Serial.println("Sending message...");
+		Network::sendMessage();
+		fill_solid(leds, NUM_LEDS, CRGB::Chartreuse);
+		// fill_solid(leds, NUM_LEDS, CRGB::Chartreuse);
+		FastLED.show();
 	}
-        free(ap_list);
+	mesh.update();
+}
+
+void Network::sendMessage() {
+	JsonDocument doc;
+	doc["color"] = 0xDFFF00;
+	// doc["color"] = 0xFF0000;
+	String output;
+	serializeJson(doc, output);
+	Serial.println(output);
+	mesh.sendBroadcast(output);
+}
+
+
+// Needed for painless library
+void Network::receivedCallback( uint32_t from, String &msg ) {
+//   if (!strcmp(bufferMessage.c_str(), msg.c_str())) {
+	Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
+	bufferMessage = msg.c_str();
+	JsonDocument doc;
+	deserializeJson(doc, msg);
+	String colorHex = doc["color"].as<String>();
+	Serial.printf("color: %s\n", colorHex.c_str());
+	CRGB color = hexToCRGB(this->decimalStringToHex(colorHex));
+	fill_solid(leds, NUM_LEDS, color);
+	FastLED.show();
+//   }
+}
+
+void Network::newConnectionCallback(uint32_t nodeId) {
+    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+}
+
+void Network::changedConnectionCallback() {
+  Serial.printf("Changed connections\n");
+}
+
+void Network::nodeTimeAdjustedCallback(int32_t offset) {
+    Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
+}
+
+CRGB Network::hexToCRGB(const String& hex) {
+    // Ensure the hex string is valid and properly formatted
+    String cleanedHex = hex;
+    if (cleanedHex.startsWith("#")) {
+        cleanedHex.remove(0, 1); // Remove '#'
+    }
+    uint32_t color = strtoul(cleanedHex.c_str(), nullptr, 16);
+    return CRGB(
+        (color >> 16) & 0xFF,  // Red
+        (color >> 8) & 0xFF,   // Green
+        color & 0xFF           // Blue
+    );
+}
+
+String Network::decimalStringToHex(String decimalString) {
+    // Convert the decimal string to an integer
+    int decimalColor = decimalString.toInt();
+
+    // Use sprintf to format the integer as a hexadecimal string
+    char hexColor[8];  // Enough space for a 6-digit hex number and the null terminator
+    sprintf(hexColor, "#%06X", decimalColor);
+    
+    // Return the hexadecimal string
+    return String(hexColor);
 }
