@@ -50,8 +50,9 @@ void Network::run() {
 	if (buttonState == HIGH) {
 		Serial.println("Sending message...");
 		Network::sendMessage();
-		fill_solid(leds, NUM_LEDS, CRGB::Chartreuse);
+		fill_solid(leds, NUM_LEDS, CRGB::Purple);
 		// fill_solid(leds, NUM_LEDS, CRGB::Chartreuse);
+		// fill_solid(leds, NUM_LEDS, CRGB::Red);
 		FastLED.show();
 	}
 	mesh.update();
@@ -59,8 +60,9 @@ void Network::run() {
 
 void Network::sendMessage() {
 	JsonDocument doc;
-	doc["color"] = 0xDFFF00;
+	// doc["color"] = 0xDFFF00; // Chartreuse
 	// doc["color"] = 0xFF0000;
+	doc["color"] = 0xA020F0; // purple
 	String output;
 	serializeJson(doc, output);
 	Serial.println(output);
