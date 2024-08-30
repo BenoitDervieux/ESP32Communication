@@ -3,12 +3,13 @@
 #include <ArduinoJSON.h>
 
 #include "Network.h"
+#include <../../variables.h>
 
 Network network;
 
 // Wi-Fi credentials
-const char* ssid = "";
-const char* password = "";
+const char* ssid = SSIDME;
+const char* password = PASSME;
 
 void setup() {
 
